@@ -13,7 +13,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # Load embedding model
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# Streamlit app config
+# App setup
 st.set_page_config(page_title="NotebookLM Clone", layout="wide")
 st.sidebar.title("📄 Upload PDF")
 uploaded_file = st.sidebar.file_uploader("Choose a PDF", type=["pdf"])
@@ -24,24 +24,22 @@ show_sources = st.sidebar.checkbox("📎 Show Source Chunks", value=True)
 if st.sidebar.button("🧹 Clear Chat History"):
     st.session_state.chat_history = []
 
-# Initialize chat history
+# Initialize session
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 st.title("🧠 NotebookLM Clone")
 st.markdown("Upload a PDF and ask questions based on its content.")
 
-# Helper: Chunk text
+# Helpers
 def chunk_text(text, chunk_size=500):
     words = text.split()
     return [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
 
-# Helper: Extract text from PDF
 def extract_text_from_pdf(file_path):
     with pdfplumber.open(file_path) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
-# Helper: Call Groq LLM
 def query_llm(system_prompt, user_prompt):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
     payload = {
@@ -65,27 +63,34 @@ if uploaded_file and GROQ_API_KEY:
     full_text = extract_text_from_pdf(tmp_path)
     chunks = chunk_text(full_text)
 
-    # Create embeddings and FAISS index
+    # Embed chunks and build index
     embeddings = model.encode(chunks)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(np.array(embeddings))
 
-    # Show chat history
-    for entry in st.session_state.chat_history:
+    # Display chat history
+    for chat in st.session_state.chat_history:
         with st.chat_message("user"):
-            st.markdown(entry["question"])
+            st.markdown(chat["question"])
         with st.chat_message("assistant"):
-            st.markdown(entry["answer"])
+            st.markdown(chat["answer"])
 
-    # Chat input (no key or on_submit needed)
+    # Input area
     question = st.chat_input("Ask a question about your PDF...")
 
     if question:
+        # 1. Add user message
+        st.session_state.chat_history.append({"question": question, "answer": None})
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        # 2. Retrieve relevant chunks
         query_embedding = model.encode([question])
         D, I = index.search(np.array(query_embedding), k=5)
         retrieved_chunks = [chunks[i] for i in I[0]]
         context = "\n\n".join([f"[Source {i+1}]\n{chunk}" for i, chunk in enumerate(retrieved_chunks)])
 
+        # 3. Create prompt
         system_prompt = (
             "You are a helpful assistant. Use only the context provided to answer the user's question.\n"
             "If the answer isn't found in the context, say \"I couldn't find the answer in the provided document.\"\n"
@@ -93,22 +98,16 @@ if uploaded_file and GROQ_API_KEY:
         )
         user_prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
 
-        with st.spinner("Thinking..."):
-            answer = query_llm(system_prompt, user_prompt)
-
-        # Save to session
-        st.session_state.chat_history.append({
-            "question": question,
-            "answer": answer
-        })
-
-        # Display new chat messages
-        with st.chat_message("user"):
-            st.markdown(question)
+        # 4. Show assistant response after loading
         with st.chat_message("assistant"):
-            st.markdown(answer)
+            with st.spinner("Thinking..."):
+                answer = query_llm(system_prompt, user_prompt)
+                st.markdown(answer)
 
-        # Show source chunks if toggled
+        # 5. Save the assistant answer
+        st.session_state.chat_history[-1]["answer"] = answer
+
+        # 6. Optional: show source chunks
         if show_sources:
             st.markdown("---")
             st.markdown("### 📎 Retrieved Source Chunks")
