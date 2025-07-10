@@ -16,22 +16,20 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 # App configuration
 st.set_page_config(page_title="NotebookLM Clone", layout="wide")
 st.sidebar.title("📄 Upload PDF")
-
 uploaded_file = st.sidebar.file_uploader("Choose a PDF", type=["pdf"])
 
 st.sidebar.title("⚙️ Settings")
 show_sources = st.sidebar.checkbox("📎 Show Source Chunks", value=True)
 
-# Optional: Clear chat history
 if st.sidebar.button("🧹 Clear Chat History"):
     st.session_state.chat_history = []
 
-# Initialize chat history in session
+# Initialize session state
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 st.title("🧠 NotebookLM Clone")
-st.markdown("Ask questions based on your uploaded document.")
+st.markdown("Upload a PDF and start chatting with it below.")
 
 # Helper: chunk text
 def chunk_text(text, chunk_size=500):
@@ -72,41 +70,60 @@ if uploaded_file and GROQ_API_KEY:
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(np.array(embeddings))
 
-    # Ask question
-    question = st.text_input("❓ Ask a question about your PDF")
+    # Show existing chat history
+    for message in st.session_state.chat_history:
+        with st.chat_message("user"):
+            st.markdown(message["question"])
+        with st.chat_message("assistant"):
+            st.markdown(message["answer"])
 
-    if question:
+    # Capture new question
+    if "input_text" not in st.session_state:
+        st.session_state.input_text = ""
+
+    def on_submit():
+        st.session_state.submitted_question = st.session_state.input_text
+        st.session_state.input_text = ""  # Clear input after submission
+
+    # Chat input box
+    with st.chat_input("Ask a question about your PDF...", key="input_text", on_submit=on_submit):
+        pass
+
+    # Handle submitted question
+    if "submitted_question" in st.session_state:
+        question = st.session_state.submitted_question
+        del st.session_state["submitted_question"]
+
         query_embedding = model.encode([question])
         D, I = index.search(np.array(query_embedding), k=5)
         retrieved_chunks = [chunks[i] for i in I[0]]
         context = "\n\n".join([f"[Source {i+1}]\n{chunk}" for i, chunk in enumerate(retrieved_chunks)])
 
-        system_prompt = """You are a helpful assistant. Use only the context provided to answer the user's question.\nIf the answer isn't found in the context, say "I couldn't find the answer in the provided document." Always cite the source chunk number like (Source 2)."""
+        system_prompt = """You are a helpful assistant. Use only the context provided to answer the user's question.
+If the answer isn't found in the context, say "I couldn't find the answer in the provided document."
+Always cite the source chunk number like (Source 2)."""
         user_prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
 
         with st.spinner("Thinking..."):
             answer = query_llm(system_prompt, user_prompt)
 
-        # Append Q&A to session history
+        # Store and display
         st.session_state.chat_history.append({
             "question": question,
             "answer": answer
         })
 
-    # Display chat history
-    if st.session_state.chat_history:
-        st.markdown("### 💬 Chat History")
-        for chat in reversed(st.session_state.chat_history):
-            st.markdown(f"**You:** {chat['question']}")
-            st.markdown(f"**AI:** {chat['answer']}")
-            st.markdown("---")
+        with st.chat_message("user"):
+            st.markdown(question)
+        with st.chat_message("assistant"):
+            st.markdown(answer)
 
-    # Show source chunks
-    if show_sources and question:
-        st.markdown("### 📎 Retrieved Source Chunks")
-        for i, chunk in enumerate(retrieved_chunks):
-            st.markdown(f"**Source {i+1}:**")
-            st.code(chunk, language="markdown")
+        if show_sources:
+            st.markdown("---")
+            st.markdown("### 📎 Retrieved Source Chunks")
+            for i, chunk in enumerate(retrieved_chunks):
+                st.markdown(f"**Source {i+1}:**")
+                st.code(chunk, language="markdown")
 
 else:
     if not uploaded_file:
