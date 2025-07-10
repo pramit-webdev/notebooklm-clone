@@ -1,5 +1,3 @@
-# app.py
-
 import os
 import streamlit as st
 import pdfplumber
@@ -23,6 +21,14 @@ uploaded_file = st.sidebar.file_uploader("Choose a PDF", type=["pdf"])
 
 st.sidebar.title("⚙️ Settings")
 show_sources = st.sidebar.checkbox("📎 Show Source Chunks", value=True)
+
+# Optional: Clear chat history
+if st.sidebar.button("🧹 Clear Chat History"):
+    st.session_state.chat_history = []
+
+# Initialize chat history in session
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 st.title("🧠 NotebookLM Clone")
 st.markdown("Ask questions based on your uploaded document.")
@@ -75,21 +81,32 @@ if uploaded_file and GROQ_API_KEY:
         retrieved_chunks = [chunks[i] for i in I[0]]
         context = "\n\n".join([f"[Source {i+1}]\n{chunk}" for i, chunk in enumerate(retrieved_chunks)])
 
-        system_prompt = """You are a helpful assistant. Use only the context provided to answer the user's question.\nIf the answer isn't found in the context, say \"I couldn't find the answer in the provided document.\"\nAlways cite the source chunk number like (Source 2)."""
+        system_prompt = """You are a helpful assistant. Use only the context provided to answer the user's question.\nIf the answer isn't found in the context, say "I couldn't find the answer in the provided document." Always cite the source chunk number like (Source 2)."""
         user_prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
 
         with st.spinner("Thinking..."):
             answer = query_llm(system_prompt, user_prompt)
 
-        st.markdown("### 🧠 Answer")
-        st.write(answer)
+        # Append Q&A to session history
+        st.session_state.chat_history.append({
+            "question": question,
+            "answer": answer
+        })
 
-        if show_sources:
+    # Display chat history
+    if st.session_state.chat_history:
+        st.markdown("### 💬 Chat History")
+        for chat in reversed(st.session_state.chat_history):
+            st.markdown(f"**You:** {chat['question']}")
+            st.markdown(f"**AI:** {chat['answer']}")
             st.markdown("---")
-            st.markdown("### 📎 Retrieved Source Chunks")
-            for i, chunk in enumerate(retrieved_chunks):
-                st.markdown(f"**Source {i+1}:**")
-                st.code(chunk, language="markdown")
+
+    # Show source chunks
+    if show_sources and question:
+        st.markdown("### 📎 Retrieved Source Chunks")
+        for i, chunk in enumerate(retrieved_chunks):
+            st.markdown(f"**Source {i+1}:**")
+            st.code(chunk, language="markdown")
 
 else:
     if not uploaded_file:
