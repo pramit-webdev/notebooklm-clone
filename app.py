@@ -56,7 +56,7 @@ def query_llm(system_prompt, user_prompt):
     response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
     return response.json()['choices'][0]['message']['content']
 
-# Process the document
+# Main logic
 if uploaded_file and GROQ_API_KEY:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
         tmp.write(uploaded_file.read())
@@ -107,7 +107,6 @@ if uploaded_file and GROQ_API_KEY:
             "answer": answer
         })
 
-        # Show sources
         if show_sources:
             st.markdown("---")
             st.markdown("### 📎 Retrieved Source Chunks")
@@ -115,11 +114,11 @@ if uploaded_file and GROQ_API_KEY:
                 st.markdown(f"**Source {i+1}:**")
                 st.code(chunk, language="markdown")
 
-    # Chat input — stores question in state, then reruns
+    # Chat input — store question, rerun
     user_input = st.chat_input("Ask a question about your PDF...")
     if user_input:
         st.session_state.pending_question = user_input
-        st.experimental_rerun()
+        st.rerun()
 
 else:
     if not uploaded_file:
