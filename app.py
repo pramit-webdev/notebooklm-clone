@@ -5,6 +5,7 @@ import faiss
 import numpy as np
 import requests
 import tempfile
+import json  # 🔧 NEW
 from sentence_transformers import SentenceTransformer
 
 # Load Groq API Key
@@ -21,9 +22,22 @@ uploaded_file = st.sidebar.file_uploader("Choose a PDF", type=["pdf"])
 st.sidebar.title("⚙️ Settings")
 show_sources = st.sidebar.checkbox("📎 Show Source Chunks", value=True)
 
-if st.sidebar.button("🧹 Clear Chat History"):
-    st.session_state.chat_history = []
-    st.session_state.pending_question = None
+# 🔧 History file path based on PDF name
+def get_history_path(filename):
+    safe_name = filename.replace(" ", "_").replace("/", "_")
+    return f"chat_history_{safe_name}.json"
+
+# 🔧 Load saved history
+def load_chat_history(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            return json.load(f)
+    return []
+
+# 🔧 Save current chat history
+def save_chat_history(file_path, history):
+    with open(file_path, "w") as f:
+        json.dump(history, f, indent=2)
 
 # Init session vars
 if "chat_history" not in st.session_state:
@@ -31,6 +45,15 @@ if "chat_history" not in st.session_state:
 
 if "pending_question" not in st.session_state:
     st.session_state.pending_question = None
+
+# Clear button
+if st.sidebar.button("🧹 Clear Chat History"):
+    st.session_state.chat_history = []
+    st.session_state.pending_question = None
+    if uploaded_file:
+        history_path = get_history_path(uploaded_file.name)
+        if os.path.exists(history_path):
+            os.remove(history_path)
 
 st.title("🧠 NotebookLM Clone")
 st.markdown("Upload a PDF and ask questions based on its content.")
@@ -69,6 +92,11 @@ if uploaded_file and GROQ_API_KEY:
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(np.array(embeddings))
 
+    # 🔧 Load saved history for this PDF
+    history_path = get_history_path(uploaded_file.name)
+    if not st.session_state.chat_history:
+        st.session_state.chat_history = load_chat_history(history_path)
+
     # Show chat history
     for chat in st.session_state.chat_history:
         with st.chat_message("user"):
@@ -101,11 +129,12 @@ if uploaded_file and GROQ_API_KEY:
                 answer = query_llm(system_prompt, user_prompt)
                 st.markdown(answer)
 
-        # Save to history
+        # 🔧 Save to session + file
         st.session_state.chat_history.append({
             "question": question,
             "answer": answer
         })
+        save_chat_history(history_path, st.session_state.chat_history)
 
         if show_sources:
             st.markdown("---")
