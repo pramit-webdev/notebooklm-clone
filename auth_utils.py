@@ -32,5 +32,4 @@ def signup_user(email, password):
         return False, str(e)
 
 def logout_user():
-    if "user" in st.session_state:
-        st.session_state.pop("user")
+    st.session_state.pop("user", None)
